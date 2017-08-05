@@ -23,11 +23,12 @@ setup(
     cmdclass={'install': RsInstall},
     ext_modules=[
         Extension(
-            '_pyrs', [os.path.join(DIR_PATH, '_pyrs.c')],
+            '_pyrs', [os.path.join(DIR_PATH, '_pyrs.cpp')],
             libraries=['realsense'],
             include_dirs=[NUMPY_PATH, '/usr/local/include', LOCAL_INCLUDE],
             library_dirs=['/usr/local/lib'],
-            extra_compile_args=['-g']
+            extra_compile_args=['-std=gnu++11'],
+            language='c++'
         ),
     ],
 )

@@ -3,48 +3,42 @@
 //
 
 #include <Python.h>
-#include <librealsense/rs.h>
+#include <librealsense/rs.hpp>
 #include <librealsense/rsutil.h>
 
-// Librealsense Error Handling
-rs_error * e = 0;
-int check_error(void)
-{
-	if(e)
-	{
-		printf("rs_error was raised when calling %s(%s):\n", rs_get_failed_function(e), rs_get_failed_args(e));
-		printf("    %s\n", rs_get_error_message(e));
-		return 1;
-	}
 
-	return 0;
+typedef struct ContextObject{
+	PyObject_HEAD
+	rs::context* ctx;
+} ContextObject;
+
+
+extern "C" {
+	static void Context_dealloc(ContextObject* self);
+	static PyObject* Context_new(PyTypeObject* type, PyObject* args, PyObject* kwds);
+	static int Context_init(ContextObject* self, PyObject* args, PyObject* kwds);
+	static PyObject* Context_n_devices(ContextObject *self);
+
+
 }
 
 
-typedef struct _pyrs__ContextObject{
-	PyObject_HEAD
-	rs_context* ctx;
-} _pyrs__ContextObject;
-
-
 static void
-_Context_dealloc(_pyrs__ContextObject* self)
+Context_dealloc(ContextObject* self)
 {
 	if (self -> ctx != NULL){
-		rs_delete_context(self -> ctx, &e);
-		check_error();
+		delete self->ctx;
 	}
-	Py_XDECREF(self -> ctx);
 	Py_TYPE(self) -> tp_free((PyObject*) self);
 }
 
 
 static PyObject*
-_Context_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
+Context_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
 {
-	_pyrs__ContextObject* self;
+	ContextObject* self;
 
-	self = (_pyrs__ContextObject*)type -> tp_alloc(type, 0);
+	self = (ContextObject*)type -> tp_alloc(type, 0);
 	if (self != NULL)
 		self -> ctx = NULL;
 
@@ -53,41 +47,38 @@ _Context_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
 
 
 static int
-_Context_init(_pyrs__ContextObject* self, PyObject* args, PyObject* kwds)
+Context_init(ContextObject* self, PyObject* args, PyObject* kwds)
 {
-	rs_context* ctx;
-	ctx = rs_create_context(RS_API_VERSION, &e);
-	check_error();
-	self -> ctx = ctx;
+	self -> ctx = new rs::context();
 	return 0;
 }
 
 
 static PyObject*
-_Context_n_device(_pyrs__ContextObject* self)
+Context_n_devices(ContextObject *self)
 {
 	if (self -> ctx == NULL){
 		PyErr_SetString(PyExc_AttributeError, "ctx");
 		return NULL;
 	}
 
-	return PyLong_FromLong(rs_get_device_count(self -> ctx, &e));
+	return PyLong_FromLong(self -> ctx -> get_device_count());
 }
 
 
-static PyMethodDef _Context_methods[] = {
-		{"n_device", (PyCFunction)_Context_n_device, METH_NOARGS,
+static PyMethodDef Context_methods[] = {
+		{"n_devices", (PyCFunction)Context_n_devices, METH_NOARGS,
 		 "Return the number of devices."},
 		{NULL}
 };
 
 
-static PyTypeObject _pyrs_ContextType = {
+static PyTypeObject ContextType = {
 		PyVarObject_HEAD_INIT(NULL, 0)
 		"_pyrs._Context",             /* tp_name */
-		sizeof(_pyrs__ContextObject),             /* tp_basicsize */
+		sizeof(ContextObject),             /* tp_basicsize */
 		0,                         /* tp_itemsize */
-		(destructor)_Context_dealloc, /* tp_dealloc */
+		(destructor)Context_dealloc, /* tp_dealloc */
 		0,                         /* tp_print */
 		0,                         /* tp_getattr */
 		0,                         /* tp_setattr */
@@ -111,7 +102,7 @@ static PyTypeObject _pyrs_ContextType = {
 		0,                         /* tp_weaklistoffset */
 		0,                         /* tp_iter */
 		0,                         /* tp_iternext */
-		_Context_methods,             /* tp_methods */
+		Context_methods,             /* tp_methods */
 		0,             /* tp_members */
 		0,                         /* tp_getset */
 		0,                         /* tp_base */
@@ -119,13 +110,13 @@ static PyTypeObject _pyrs_ContextType = {
 		0,                         /* tp_descr_get */
 		0,                         /* tp_descr_set */
 		0,                         /* tp_dictoffset */
-		(initproc)_Context_init,      /* tp_init */
+		(initproc)Context_init,      /* tp_init */
 		0,                         /* tp_alloc */
-		_Context_new,                 /* tp_new */
+		Context_new,                 /* tp_new */
 };
 
 
-static PyModuleDef _pyrsmodule = {
+static PyModuleDef pyrsmodule = {
 		PyModuleDef_HEAD_INIT,
 		"_pyrs",
 		"",
@@ -138,15 +129,15 @@ PyMODINIT_FUNC
 PyInit__pyrs(void)
 {
 	PyObject* m;
-	_pyrs_ContextType.tp_new = PyType_GenericNew;
-	if (PyType_Ready(&_pyrs_ContextType) < 0)
+	ContextType.tp_new = PyType_GenericNew;
+	if (PyType_Ready(&ContextType) < 0)
 		return NULL;
 
-	m = PyModule_Create(&_pyrsmodule);
+	m = PyModule_Create(&pyrsmodule);
 	if (m == NULL)
 		return NULL;
 
-	Py_INCREF(&_pyrs_ContextType);
-	PyModule_AddObject(m, "_Context", (PyObject*)&_pyrs_ContextType);
+	Py_INCREF(&ContextType);
+	PyModule_AddObject(m, "_Context", (PyObject*)&ContextType);
 	return m;
 }
