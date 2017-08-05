@@ -13,16 +13,6 @@ typedef struct ContextObject{
 } ContextObject;
 
 
-extern "C" {
-	static void Context_dealloc(ContextObject* self);
-	static PyObject* Context_new(PyTypeObject* type, PyObject* args, PyObject* kwds);
-	static int Context_init(ContextObject* self, PyObject* args, PyObject* kwds);
-	static PyObject* Context_n_devices(ContextObject *self);
-
-
-}
-
-
 static void
 Context_dealloc(ContextObject* self)
 {
