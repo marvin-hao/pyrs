@@ -57,7 +57,7 @@ Context_n_devices(ContextObject *self)
 
 
 static PyMethodDef Context_methods[] = {
-		{"n_devices", (PyCFunction)Context_n_devices, METH_NOARGS,
+		{"_n_devices", (PyCFunction)Context_n_devices, METH_NOARGS,
 		 "Return the number of devices."},
 		{NULL}
 };

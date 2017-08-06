@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 project(pyrs)
 set(CMAKE_CXX_STANDARD 11)
-set(SOURCE_FILES _pyrs.cpp)
+set(SOURCE_FILES cpyrs/_pyrs.cpp)
 
 include_directories(/usr/local/include/python3.6m/)
 link_directories(/usr/local/lib)
