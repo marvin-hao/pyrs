@@ -7,6 +7,75 @@
 #include <librealsense/rsutil.h>
 
 
+typedef struct DeviceObject{
+	PyObject_HEAD
+	rs::device* dev;
+} DeviceObject;
+
+
+static void
+Device_dealloc(DeviceObject* self)
+{
+	if (self -> dev != NULL){
+		self -> dev = NULL;
+	}
+	Py_TYPE(self) -> tp_free((PyObject*) self);
+}
+
+// todo: will cause segmentation fault if the context object is changed
+static PyObject*
+Device_serial_number(DeviceObject *self)
+{
+	if (self -> dev == NULL){
+		PyErr_SetString(PyExc_AttributeError, "dev");
+		return NULL;
+	}
+
+	return PyUnicode_FromString(self -> dev -> get_serial());
+}
+
+
+static PyMethodDef Device_methods[] = {
+		{"serial_number", (PyCFunction)Device_serial_number, METH_NOARGS,
+				"Return the serial number of the device."},
+		{NULL}
+};
+
+
+static PyTypeObject DeviceType = {
+		PyVarObject_HEAD_INIT(NULL, 0)
+		"_pyrs._Device",             /* tp_name */
+		sizeof(DeviceObject),             /* tp_basicsize */
+		0,                         /* tp_itemsize */
+		(destructor)Device_dealloc, /* tp_dealloc */
+		0,                         /* tp_print */
+		0,                         /* tp_getattr */
+		0,                         /* tp_setattr */
+		0,                         /* tp_reserved */
+		0,                         /* tp_repr */
+		0,                         /* tp_as_number */
+		0,                         /* tp_as_sequence */
+		0,                         /* tp_as_mapping */
+		0,                         /* tp_hash  */
+		0,                         /* tp_call */
+		0,                         /* tp_str */
+		0,                         /* tp_getattro */
+		0,                         /* tp_setattro */
+		0,                         /* tp_as_buffer */
+		Py_TPFLAGS_DEFAULT |
+		Py_TPFLAGS_BASETYPE,   /* tp_flags */
+		"_Device objects",           /* tp_doc */
+		0,                         /* tp_traverse */
+		0,                         /* tp_clear */
+		0,                         /* tp_richcompare */
+		0,                         /* tp_weaklistoffset */
+		0,                         /* tp_iter */
+		0,                         /* tp_iternext */
+		Device_methods,             /* tp_methods */
+};
+
+
+
 typedef struct ContextObject{
 	PyObject_HEAD
 	rs::context* ctx;
@@ -20,19 +89,6 @@ Context_dealloc(ContextObject* self)
 		delete self->ctx;
 	}
 	Py_TYPE(self) -> tp_free((PyObject*) self);
-}
-
-
-static PyObject*
-Context_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
-{
-	ContextObject* self;
-
-	self = (ContextObject*)type -> tp_alloc(type, 0);
-	if (self != NULL)
-		self -> ctx = NULL;
-
-	return (PyObject* )self;
 }
 
 
@@ -56,9 +112,37 @@ Context_n_devices(ContextObject *self)
 }
 
 
+static PyObject*
+Context_get_device(ContextObject *self)
+{
+	if (self -> ctx == NULL){
+		PyErr_SetString(PyExc_AttributeError, "ctx");
+		return NULL;
+	}
+
+	PyObject* arglist = Py_BuildValue("()");
+	DeviceObject* device = (DeviceObject*) PyObject_CallObject((PyObject *) &DeviceType, arglist);
+	Py_DECREF(arglist);
+
+	if (device == NULL)
+		return NULL;
+
+	if (self->ctx->get_device_count() == 0){
+		PyErr_SetString(PyExc_ValueError, "No device detected.");
+		return NULL;
+	}
+
+	device -> dev = self -> ctx -> get_device(0);
+
+	return (PyObject* )device;
+}
+
+
 static PyMethodDef Context_methods[] = {
 		{"_n_devices", (PyCFunction)Context_n_devices, METH_NOARGS,
-		 "Return the number of devices."},
+				"Return the number of devices."},
+		{"get_device", (PyCFunction)Context_get_device, METH_NOARGS,
+				"Get the first device."},
 		{NULL}
 };
 
@@ -101,9 +185,8 @@ static PyTypeObject ContextType = {
 		0,                         /* tp_descr_set */
 		0,                         /* tp_dictoffset */
 		(initproc)Context_init,      /* tp_init */
-		0,                         /* tp_alloc */
-		Context_new,                 /* tp_new */
 };
+
 
 
 static PyModuleDef pyrsmodule = {
@@ -119,6 +202,11 @@ PyMODINIT_FUNC
 PyInit__pyrs(void)
 {
 	PyObject* m;
+
+	DeviceType.tp_new = PyType_GenericNew;
+	if (PyType_Ready(&DeviceType) < 0)
+		return NULL;
+
 	ContextType.tp_new = PyType_GenericNew;
 	if (PyType_Ready(&ContextType) < 0)
 		return NULL;
@@ -129,5 +217,8 @@ PyInit__pyrs(void)
 
 	Py_INCREF(&ContextType);
 	PyModule_AddObject(m, "_Context", (PyObject*)&ContextType);
+
+	Py_INCREF(&DeviceType);
+	PyModule_AddObject(m, "_Device", (PyObject*)&DeviceType);
 	return m;
 }
