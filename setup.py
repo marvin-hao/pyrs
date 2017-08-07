@@ -23,7 +23,7 @@ setup(
     py_modules=['pyrs'],
     ext_modules=[
         Extension(
-            '_pyrs', [os.path.join(DIR_PATH, 'cpyrs', '_pyrs.cpp')],
+            '_pyrs', [os.path.join(DIR_PATH, 'cpyrs', 'pyrs.cpp')],
             libraries=['realsense'],
             include_dirs=[NUMPY_PATH, '/usr/local/include', LOCAL_INCLUDE],
             library_dirs=['/usr/local/lib'],
