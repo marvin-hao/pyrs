@@ -4,6 +4,7 @@
 
 #include "context.h"
 #include "device.h"
+#include "exception.h"
 
 
 static PyModuleDef pyrsmodule = {
@@ -31,6 +32,10 @@ PyInit__pyrs(void)
 	m = PyModule_Create(&pyrsmodule);
 	if (m == NULL)
 		return NULL;
+
+	RsError = PyErr_NewException("pyrs.error", NULL, NULL);
+	Py_INCREF(RsError);
+	PyModule_AddObject(m, "RsError", RsError);
 
 	Py_INCREF(&ContextType);
 	PyModule_AddObject(m, "_Context", (PyObject*)&ContextType);

@@ -4,6 +4,8 @@
 #include <Python.h>
 #include <librealsense/rs.hpp>
 
+#include "exception.h"
+
 
 typedef struct DeviceObject{
 	PyObject_HEAD
@@ -16,10 +18,18 @@ static void Device_dealloc(DeviceObject* self);
 
 static PyObject* Device_serial_number(DeviceObject *self);
 
+static PyObject* Device_stop(DeviceObject *self);
+
+static PyObject* Device_start(DeviceObject *self);
+
 
 static PyMethodDef Device_methods[] = {
 		{"serial_number", (PyCFunction)Device_serial_number, METH_NOARGS,
 				"Return the serial number of the device."},
+		{"_stop", (PyCFunction)Device_stop, METH_NOARGS,
+				"Stop the device."},
+		{"_start", (PyCFunction)Device_start, METH_NOARGS,
+				"Start the device."},
 		{NULL}
 };
 
@@ -76,6 +86,35 @@ Device_serial_number(DeviceObject *self)
 	}
 
 	return PyUnicode_FromString(self -> dev -> get_serial());
+}
+
+static PyObject* Device_stop(DeviceObject *self)
+{
+	if (self -> dev == NULL){
+		PyErr_SetString(PyExc_AttributeError, "dev");
+		return NULL;
+	}
+
+	self->dev->stop();
+
+	Py_RETURN_NONE;
+}
+
+
+static PyObject* Device_start(DeviceObject *self)
+{
+	if (self -> dev == NULL){
+		PyErr_SetString(PyExc_AttributeError, "dev");
+		return NULL;
+	}
+	try {
+		self->dev->start();
+	} catch (const rs::error &e) {
+		PyThrowRsErr(e)
+	}
+
+
+	Py_RETURN_NONE;
 }
 
 #endif //PYRS_DEVICE_H
