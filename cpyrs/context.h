@@ -18,13 +18,13 @@ static int Context_init(ContextObject* self, PyObject* args, PyObject* kwds);
 
 static PyObject*Context_n_devices(ContextObject *self);
 
-static PyObject* Context_get_device(ContextObject *self);
+static PyObject* Context_get_device(ContextObject *self, PyObject* args, PyObject* kwds);
 
 
 static PyMethodDef Context_methods[] = {
 		{"_n_devices", (PyCFunction)Context_n_devices, METH_NOARGS,
 				"Return the number of devices."},
-		{"get_device", (PyCFunction)Context_get_device, METH_NOARGS,
+		{"_get_device", (PyCFunction)Context_get_device, METH_VARARGS,
 				"Get the first device."},
 		{NULL}
 };
@@ -103,28 +103,36 @@ Context_n_devices(ContextObject *self)
 
 
 static PyObject*
-Context_get_device(ContextObject *self)
+Context_get_device(ContextObject *self, PyObject* args, PyObject* kwds)
 {
-	if (self -> ctx == NULL){
-		PyErr_SetString(PyExc_AttributeError, "ctx");
-		return NULL;
+	PyObject* result = NULL;
+	int dev_ind;
+
+	if (PyArg_ParseTuple(args, "i", &dev_ind)){
+
+		if (self -> ctx == NULL){
+			PyErr_SetString(PyExc_AttributeError, "ctx");
+			return NULL;
+		}
+
+		PyObject* arglist = Py_BuildValue("()");
+		DeviceObject* device = (DeviceObject*) PyObject_CallObject((PyObject *) &DeviceType, arglist);
+		Py_DECREF(arglist);
+
+		if (device == NULL)
+			return NULL;
+
+		if (self->ctx->get_device_count() <= dev_ind){
+			PyErr_SetString(PyExc_IndexError, "The index is out of range.");
+			return NULL;
+		}
+
+		device -> dev = self -> ctx -> get_device(dev_ind);
+
+		return (PyObject* )device;
+
 	}
-
-	PyObject* arglist = Py_BuildValue("()");
-	DeviceObject* device = (DeviceObject*) PyObject_CallObject((PyObject *) &DeviceType, arglist);
-	Py_DECREF(arglist);
-
-	if (device == NULL)
-		return NULL;
-
-	if (self->ctx->get_device_count() == 0){
-		PyErr_SetString(PyExc_ValueError, "No device detected.");
-		return NULL;
-	}
-
-	device -> dev = self -> ctx -> get_device(0);
-
-	return (PyObject* )device;
+	return result;
 }
 
 
