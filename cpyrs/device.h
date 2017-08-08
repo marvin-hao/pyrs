@@ -29,6 +29,8 @@ static PyObject* Device_enable_stream(DeviceObject *self, PyObject *args);
 
 static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args);
 
+static PyObject* Device_set_options(DeviceObject *self, PyObject* args);
+
 
 static PyMethodDef Device_methods[] = {
 		{"serial_number", (PyCFunction)Device_serial_number, METH_NOARGS,
@@ -43,6 +45,8 @@ static PyMethodDef Device_methods[] = {
 				"Enable a specific stream."},
 		{"_get_frame_from", (PyCFunction)Device_get_frame_from, METH_VARARGS,
 				"Get a single frame from each of the enabled streams."},
+		{"_set_options", (PyCFunction)Device_set_options, METH_VARARGS,
+				"Set device options."},
 		{NULL}
 };
 
@@ -254,6 +258,40 @@ static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args)
 			PyErr_SetString(RsError, "The stream is not supported yet.");
 			return NULL;
 		}
+	}
+	PyErr_SetString(PyExc_ValueError, "Cannot parse the input.");
+	return NULL;
+}
+
+
+static PyObject* Device_set_options(DeviceObject *self, PyObject* args)
+{
+	PyObject* py_options, * py_count, * py_values;
+
+	if (PyArg_ParseTuple(args, "OOO", &py_options, &py_count, &py_values)){
+
+		if (self -> dev == NULL){
+			PyErr_SetString(PyExc_AttributeError, "dev");
+			return NULL;
+		}
+
+		size_t count = PyLong_AsSize_t(py_count);
+		rs::option* options = new rs::option[count];
+		double* values = new double[count];
+
+		for (size_t i = 0; i < count; ++i)
+		{
+			options[i] = (rs::option)PyLong_AsLong(PyList_GetItem(py_options, i));
+			values[i] = PyFloat_AsDouble(PyList_GetItem(py_values, i));
+		}
+
+		try {
+			self->dev->set_options(options, count, values);
+		} catch (const rs::error &e) {
+			PyThrowRsErr(e)
+		}
+
+		Py_RETURN_NONE;
 	}
 	PyErr_SetString(PyExc_ValueError, "Cannot parse the input.");
 	return NULL;
