@@ -206,7 +206,11 @@ static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args)
 		try {
 
 			self->dev->wait_for_frames();
-			if (s == rs::stream::depth)
+			if (s == rs::stream::depth
+				or s == rs::stream::depth_aligned_to_color
+				or s == rs::stream::depth_aligned_to_rectified_color
+				or s == rs::stream::depth_aligned_to_infrared2)
+
 				dframe = (uint16_t *)(self->dev->get_frame_data(s));
 			else
 				frame = (uint8_t*)self->dev->get_frame_data(s);
@@ -219,7 +223,10 @@ static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args)
 		PyObject* npy_dframe = NULL;
 		PyObject* npy_irframe = NULL;
 
-		if (s == rs::stream::color) {
+		if (s == rs::stream::color
+			or s == rs::stream::color_aligned_to_depth
+			or s == rs::stream::rectified_color)
+		{
 			npy_intp cframe_dim[3] = {self->dev->get_stream_height(s), self->dev->get_stream_width(s), 3};
 
 			npy_cframe = PyArray_SimpleNewFromData(
@@ -231,7 +238,11 @@ static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args)
 			}
 			return npy_cframe;
 
-		} else if (s == rs::stream::depth) {
+		} else if (s == rs::stream::depth
+				   or s == rs::stream::depth_aligned_to_color
+				   or s == rs::stream::depth_aligned_to_rectified_color
+				   or s == rs::stream::depth_aligned_to_infrared2)
+		{
 			npy_intp dframe_dim[2] = {self->dev->get_stream_height(s), self->dev->get_stream_width(s)};
 			npy_dframe = PyArray_SimpleNewFromData(
 					2, dframe_dim, NPY_UINT16, dframe
@@ -242,7 +253,10 @@ static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args)
 			}
 
 			return npy_dframe;
-		} else if (s == rs::stream::infrared) {
+		} else if (s == rs::stream::infrared
+				   or s == rs::stream::infrared2
+				   or s == rs::stream::infrared2_aligned_to_depth)
+		{
 			npy_intp irframe_dim[2] = {self->dev->get_stream_height(s), self->dev->get_stream_width(s)};
 			npy_irframe = PyArray_SimpleNewFromData(
 					2, irframe_dim, NPY_UINT8, frame
