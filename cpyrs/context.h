@@ -20,12 +20,16 @@ static PyObject*Context_n_devices(ContextObject *self);
 
 static PyObject* Context_get_device(ContextObject *self, PyObject* args, PyObject* kwds);
 
+static PyObject* Context_get_device_by_serial(ContextObject *self, PyObject* args, PyObject* kwds);
+
 
 static PyMethodDef Context_methods[] = {
 		{"_n_devices", (PyCFunction)Context_n_devices, METH_NOARGS,
 				"Return the number of devices."},
 		{"_get_device", (PyCFunction)Context_get_device, METH_VARARGS,
 				"Get the first device."},
+		{"_get_device_by_serial", (PyCFunction)Context_get_device_by_serial, METH_VARARGS,
+				"Get the device by the serial number."},
 		{NULL}
 };
 
@@ -99,6 +103,48 @@ Context_n_devices(ContextObject *self)
 	}
 
 	return PyLong_FromLong(self -> ctx -> get_device_count());
+}
+
+
+static PyObject*
+Context_get_device_by_serial(ContextObject *self, PyObject* args, PyObject* kwds)
+{
+	PyObject* result = NULL;
+	char* serial;
+
+	if (PyArg_ParseTuple(args, "s", &serial)){
+
+		if (self -> ctx == NULL){
+			PyErr_SetString(PyExc_AttributeError, "ctx");
+			return NULL;
+		}
+
+		PyObject* arglist = Py_BuildValue("()");
+		DeviceObject* device = (DeviceObject*) PyObject_CallObject((PyObject *) &DeviceType, arglist);
+		Py_DECREF(arglist);
+
+		if (device == NULL)
+			return NULL;
+
+        for( int i = 0; i < self->ctx->get_device_count(); ++i)
+        {
+            rs::device* dev = self->ctx->get_device(i);
+            if (strcmp(dev->get_serial(), serial) == 0)
+            {
+                device->dev = dev;
+            }
+        }
+
+		if (device -> dev == NULL)
+        {
+            PyErr_SetString(PyExc_ValueError, "No such device.");
+            return NULL;
+        }
+
+		return (PyObject* )device;
+
+	}
+	return result;
 }
 
 
