@@ -1,4 +1,7 @@
 #include <Python.h>
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+#include <numpy/arrayobject.h>
+
 #include <librealsense/rs.hpp>
 #include <librealsense/rsutil.h>
 
@@ -20,6 +23,8 @@ PyMODINIT_FUNC
 PyInit__pyrs(void)
 {
 	PyObject* m;
+
+	import_array();
 
 	DeviceType.tp_new = PyType_GenericNew;
 	if (PyType_Ready(&DeviceType) < 0)

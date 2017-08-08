@@ -3,6 +3,7 @@ project(pyrs)
 set(CMAKE_CXX_STANDARD 11)
 set(SOURCE_FILES
         cpyrs/pyrs.cpp
+        cpyrs/exception.h
         cpyrs/device.h
         cpyrs/context.h)
 
