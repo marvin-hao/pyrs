@@ -14,10 +14,28 @@ typedef struct DeviceObject{
 } DeviceObject;
 
 
+#define PyRsDevCharProperty(prop, rs_prop) \
+static PyObject* \
+Device_##prop(DeviceObject *self) \
+{ \
+	if (self -> dev == NULL){ \
+		PyErr_SetString(PyExc_AttributeError, "dev"); \
+		return NULL; \
+	} \
+ \
+	const char* p; \
+ \
+	try{ \
+		p = self->dev->rs_prop(); \
+		return PyUnicode_FromString(p); \
+	} catch (const rs::error &e) { \
+		PyThrowRsErr(e) \
+	} \
+} \
+
+
 
 static void Device_dealloc(DeviceObject* self);
-
-static PyObject* Device_serial_number(DeviceObject *self);
 
 static PyObject* Device_stop(DeviceObject *self);
 
@@ -27,14 +45,20 @@ static PyObject* Device_enable_stream_preset(DeviceObject *self, PyObject *args)
 
 static PyObject* Device_enable_stream(DeviceObject *self, PyObject *args);
 
+static PyObject* Device_serial(DeviceObject *self);
+
+static PyObject* Device_name(DeviceObject *self);
+
+static PyObject* Device_usb_port_id(DeviceObject *self);
+
+static PyObject* Device_firmware_version(DeviceObject *self);
+
 static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args);
 
 static PyObject* Device_set_options(DeviceObject *self, PyObject* args);
 
 
 static PyMethodDef Device_methods[] = {
-		{"serial_number", (PyCFunction)Device_serial_number, METH_NOARGS,
-				"Return the serial number of the device."},
 		{"_stop", (PyCFunction)Device_stop, METH_NOARGS,
 				"Stop the device."},
 		{"_start", (PyCFunction)Device_start, METH_NOARGS,
@@ -43,6 +67,14 @@ static PyMethodDef Device_methods[] = {
 				"Enable a preset stream."},
 		{"_enable_stream", (PyCFunction)Device_enable_stream, METH_VARARGS,
 				"Enable a specific stream."},
+		{"serial", (PyCFunction)Device_serial, METH_NOARGS,
+				"Return the serial number of the device."},
+		{"name", (PyCFunction)Device_name, METH_NOARGS,
+				"Return the name of the device."},
+		{"usb_port_id", (PyCFunction)Device_usb_port_id, METH_NOARGS,
+				"Return the device's usb port id."},
+		{"firmware_version", (PyCFunction)Device_firmware_version, METH_NOARGS,
+				"Return the firmware version info of the device."},
 		{"_get_frame_from", (PyCFunction)Device_get_frame_from, METH_VARARGS,
 				"Get a single frame from each of the enabled streams."},
 		{"_set_options", (PyCFunction)Device_set_options, METH_VARARGS,
@@ -83,6 +115,12 @@ static PyTypeObject DeviceType = {
 		Device_methods,             /* tp_methods */
 };
 
+PyRsDevCharProperty(serial, get_serial)
+PyRsDevCharProperty(name, get_name)
+PyRsDevCharProperty(usb_port_id, get_usb_port_id)
+PyRsDevCharProperty(firmware_version, get_firmware_version)
+
+
 
 static void
 Device_dealloc(DeviceObject* self)
@@ -91,18 +129,6 @@ Device_dealloc(DeviceObject* self)
 		self -> dev = NULL;
 	}
 	Py_TYPE(self) -> tp_free((PyObject*) self);
-}
-
-// todo: will cause segmentation fault if the context object is changed
-static PyObject*
-Device_serial_number(DeviceObject *self)
-{
-	if (self -> dev == NULL){
-		PyErr_SetString(PyExc_AttributeError, "dev");
-		return NULL;
-	}
-
-	return PyUnicode_FromString(self -> dev -> get_serial());
 }
 
 static PyObject* Device_stop(DeviceObject *self)
