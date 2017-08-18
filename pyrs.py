@@ -151,8 +151,20 @@ class Device(object):
             raise ValueError('Devices must be produced by Context objects.')
 
     @property
-    def serial_number(self):
-        return self._dev.serial_number()
+    def serial(self):
+        return self._dev.serial()
+
+    @property
+    def name(self):
+        return self._dev.name()
+
+    @property
+    def usb_port_id(self):
+        return self._dev.usb_port_id()
+
+    @property
+    def firmware_version(self):
+        return self._dev.firmware_version()
 
     def enable_stream(self, stream, width, height, fmt, fps, output_format=OutputBufferFormat.CONTINUOUS):
         return self._dev._enable_stream(stream, width, height, fmt, fps, output_format)
@@ -177,3 +189,6 @@ class Device(object):
             if op not in Option.__dict__.values():
                 raise ValueError('The option code {} is unknown.'.format(op))
         return self._dev._set_options(ops, cnt, vals)
+
+    def get_extrinsics(self, from_stream, to_stream):
+        return self._dev._get_extrinsics(from_stream, to_stream)

@@ -14,10 +14,28 @@ typedef struct DeviceObject{
 } DeviceObject;
 
 
+#define PyRsDevCharProperty(prop, rs_prop) \
+static PyObject* \
+Device_##prop(DeviceObject *self) \
+{ \
+	if (self -> dev == NULL){ \
+		PyErr_SetString(PyExc_AttributeError, "dev"); \
+		return NULL; \
+	} \
+ \
+	const char* p; \
+ \
+	try{ \
+		p = self->dev->rs_prop(); \
+		return PyUnicode_FromString(p); \
+	} catch (const rs::error &e) { \
+		PyThrowRsErr(e) \
+	} \
+} \
+
+
 
 static void Device_dealloc(DeviceObject* self);
-
-static PyObject* Device_serial_number(DeviceObject *self);
 
 static PyObject* Device_stop(DeviceObject *self);
 
@@ -27,14 +45,22 @@ static PyObject* Device_enable_stream_preset(DeviceObject *self, PyObject *args)
 
 static PyObject* Device_enable_stream(DeviceObject *self, PyObject *args);
 
+static PyObject* Device_serial(DeviceObject *self);
+
+static PyObject* Device_name(DeviceObject *self);
+
+static PyObject* Device_usb_port_id(DeviceObject *self);
+
+static PyObject* Device_firmware_version(DeviceObject *self);
+
 static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args);
 
 static PyObject* Device_set_options(DeviceObject *self, PyObject* args);
 
+static PyObject* Device_get_extrinsics(DeviceObject *self, PyObject* args);
+
 
 static PyMethodDef Device_methods[] = {
-		{"serial_number", (PyCFunction)Device_serial_number, METH_NOARGS,
-				"Return the serial number of the device."},
 		{"_stop", (PyCFunction)Device_stop, METH_NOARGS,
 				"Stop the device."},
 		{"_start", (PyCFunction)Device_start, METH_NOARGS,
@@ -43,10 +69,20 @@ static PyMethodDef Device_methods[] = {
 				"Enable a preset stream."},
 		{"_enable_stream", (PyCFunction)Device_enable_stream, METH_VARARGS,
 				"Enable a specific stream."},
+		{"serial", (PyCFunction)Device_serial, METH_NOARGS,
+				"Return the serial number of the device."},
+		{"name", (PyCFunction)Device_name, METH_NOARGS,
+				"Return the name of the device."},
+		{"usb_port_id", (PyCFunction)Device_usb_port_id, METH_NOARGS,
+				"Return the device's usb port id."},
+		{"firmware_version", (PyCFunction)Device_firmware_version, METH_NOARGS,
+				"Return the firmware version info of the device."},
 		{"_get_frame_from", (PyCFunction)Device_get_frame_from, METH_VARARGS,
 				"Get a single frame from each of the enabled streams."},
 		{"_set_options", (PyCFunction)Device_set_options, METH_VARARGS,
 				"Set device options."},
+		{"_get_extrinsics", (PyCFunction)Device_get_extrinsics, METH_VARARGS,
+				"Get the extrinsics (rotation, translation) from one stream to another."},
 		{NULL}
 };
 
@@ -83,6 +119,12 @@ static PyTypeObject DeviceType = {
 		Device_methods,             /* tp_methods */
 };
 
+PyRsDevCharProperty(serial, get_serial)
+PyRsDevCharProperty(name, get_name)
+PyRsDevCharProperty(usb_port_id, get_usb_port_id)
+PyRsDevCharProperty(firmware_version, get_firmware_version)
+
+
 
 static void
 Device_dealloc(DeviceObject* self)
@@ -91,18 +133,6 @@ Device_dealloc(DeviceObject* self)
 		self -> dev = NULL;
 	}
 	Py_TYPE(self) -> tp_free((PyObject*) self);
-}
-
-// todo: will cause segmentation fault if the context object is changed
-static PyObject*
-Device_serial_number(DeviceObject *self)
-{
-	if (self -> dev == NULL){
-		PyErr_SetString(PyExc_AttributeError, "dev");
-		return NULL;
-	}
-
-	return PyUnicode_FromString(self -> dev -> get_serial());
 }
 
 static PyObject* Device_stop(DeviceObject *self)
@@ -206,7 +236,11 @@ static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args)
 		try {
 
 			self->dev->wait_for_frames();
-			if (s == rs::stream::depth)
+			if (s == rs::stream::depth
+				or s == rs::stream::depth_aligned_to_color
+				or s == rs::stream::depth_aligned_to_rectified_color
+				or s == rs::stream::depth_aligned_to_infrared2)
+
 				dframe = (uint16_t *)(self->dev->get_frame_data(s));
 			else
 				frame = (uint8_t*)self->dev->get_frame_data(s);
@@ -219,7 +253,10 @@ static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args)
 		PyObject* npy_dframe = NULL;
 		PyObject* npy_irframe = NULL;
 
-		if (s == rs::stream::color) {
+		if (s == rs::stream::color
+			or s == rs::stream::color_aligned_to_depth
+			or s == rs::stream::rectified_color)
+		{
 			npy_intp cframe_dim[3] = {self->dev->get_stream_height(s), self->dev->get_stream_width(s), 3};
 
 			npy_cframe = PyArray_SimpleNewFromData(
@@ -231,7 +268,11 @@ static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args)
 			}
 			return npy_cframe;
 
-		} else if (s == rs::stream::depth) {
+		} else if (s == rs::stream::depth
+				   or s == rs::stream::depth_aligned_to_color
+				   or s == rs::stream::depth_aligned_to_rectified_color
+				   or s == rs::stream::depth_aligned_to_infrared2)
+		{
 			npy_intp dframe_dim[2] = {self->dev->get_stream_height(s), self->dev->get_stream_width(s)};
 			npy_dframe = PyArray_SimpleNewFromData(
 					2, dframe_dim, NPY_UINT16, dframe
@@ -242,7 +283,10 @@ static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args)
 			}
 
 			return npy_dframe;
-		} else if (s == rs::stream::infrared) {
+		} else if (s == rs::stream::infrared
+				   or s == rs::stream::infrared2
+				   or s == rs::stream::infrared2_aligned_to_depth)
+		{
 			npy_intp irframe_dim[2] = {self->dev->get_stream_height(s), self->dev->get_stream_width(s)};
 			npy_irframe = PyArray_SimpleNewFromData(
 					2, irframe_dim, NPY_UINT8, frame
@@ -295,6 +339,59 @@ static PyObject* Device_set_options(DeviceObject *self, PyObject* args)
 	}
 	PyErr_SetString(PyExc_ValueError, "Cannot parse the input.");
 	return NULL;
+}
+
+
+static PyObject* Device_get_extrinsics(DeviceObject *self, PyObject* args)
+{
+	int from_stream, to_stream;
+
+	if (PyArg_ParseTuple(args, "ii", &from_stream, &to_stream)) {
+
+		if (self->dev == NULL) {
+			PyErr_SetString(PyExc_AttributeError, "dev");
+			return NULL;
+		}
+
+		rs::stream from_s = (rs::stream) from_stream;
+		rs::stream to_s = (rs::stream) to_stream;
+
+		rs::extrinsics extrin;
+
+		try {
+			extrin = self->dev->get_extrinsics(from_s, to_s);
+		} catch (const rs::error &e) {
+			PyThrowRsErr(e)
+		}
+
+		npy_intp r_dim[2] = {3, 3};
+		npy_intp t_dim[2] = {3, 1};
+
+		float* rotation = new float[9];
+
+		for (int i = 0; i < 9; ++i){
+			rotation[i] = extrin.rotation[i];
+		}
+
+		float* translation = new float[3];
+
+		for (int i = 0; i < 3; ++i){
+			translation[i] = extrin.translation[i];
+		}
+
+		PyArrayObject* npy_rotation_trans = (PyArrayObject*) PyArray_SimpleNewFromData(2, r_dim, NPY_FLOAT32, rotation);
+		PyArrayObject* npy_translation = (PyArrayObject*) PyArray_SimpleNewFromData(2, t_dim, NPY_FLOAT32, translation);
+		PyArrayObject* npy_rotation = (PyArrayObject*) PyArray_Transpose(npy_rotation_trans, NULL);
+		PyArray_ENABLEFLAGS(npy_translation, NPY_ARRAY_OWNDATA);
+		PyArray_ENABLEFLAGS(npy_rotation, NPY_ARRAY_OWNDATA);
+		Py_DECREF(npy_rotation_trans);
+
+		return Py_BuildValue("NN", npy_rotation, npy_translation);
+
+	} else {
+		PyErr_SetString(PyExc_ValueError, "Cannot parse the input.");
+		return NULL;
+	}
 }
 
 
