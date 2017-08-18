@@ -189,3 +189,6 @@ class Device(object):
             if op not in Option.__dict__.values():
                 raise ValueError('The option code {} is unknown.'.format(op))
         return self._dev._set_options(ops, cnt, vals)
+
+    def get_extrinsics(self, from_stream, to_stream):
+        return self._dev._get_extrinsics(from_stream, to_stream)

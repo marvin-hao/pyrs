@@ -57,6 +57,8 @@ static PyObject* Device_get_frame_from(DeviceObject *self, PyObject* args);
 
 static PyObject* Device_set_options(DeviceObject *self, PyObject* args);
 
+static PyObject* Device_get_extrinsics(DeviceObject *self, PyObject* args);
+
 
 static PyMethodDef Device_methods[] = {
 		{"_stop", (PyCFunction)Device_stop, METH_NOARGS,
@@ -79,6 +81,8 @@ static PyMethodDef Device_methods[] = {
 				"Get a single frame from each of the enabled streams."},
 		{"_set_options", (PyCFunction)Device_set_options, METH_VARARGS,
 				"Set device options."},
+		{"_get_extrinsics", (PyCFunction)Device_get_extrinsics, METH_VARARGS,
+				"Get the extrinsics (rotation, translation) from one stream to another."},
 		{NULL}
 };
 
@@ -335,6 +339,59 @@ static PyObject* Device_set_options(DeviceObject *self, PyObject* args)
 	}
 	PyErr_SetString(PyExc_ValueError, "Cannot parse the input.");
 	return NULL;
+}
+
+
+static PyObject* Device_get_extrinsics(DeviceObject *self, PyObject* args)
+{
+	int from_stream, to_stream;
+
+	if (PyArg_ParseTuple(args, "ii", &from_stream, &to_stream)) {
+
+		if (self->dev == NULL) {
+			PyErr_SetString(PyExc_AttributeError, "dev");
+			return NULL;
+		}
+
+		rs::stream from_s = (rs::stream) from_stream;
+		rs::stream to_s = (rs::stream) to_stream;
+
+		rs::extrinsics extrin;
+
+		try {
+			extrin = self->dev->get_extrinsics(from_s, to_s);
+		} catch (const rs::error &e) {
+			PyThrowRsErr(e)
+		}
+
+		npy_intp r_dim[2] = {3, 3};
+		npy_intp t_dim[2] = {3, 1};
+
+		float* rotation = new float[9];
+
+		for (int i = 0; i < 9; ++i){
+			rotation[i] = extrin.rotation[i];
+		}
+
+		float* translation = new float[3];
+
+		for (int i = 0; i < 3; ++i){
+			translation[i] = extrin.translation[i];
+		}
+
+		PyArrayObject* npy_rotation_trans = (PyArrayObject*) PyArray_SimpleNewFromData(2, r_dim, NPY_FLOAT32, rotation);
+		PyArrayObject* npy_translation = (PyArrayObject*) PyArray_SimpleNewFromData(2, t_dim, NPY_FLOAT32, translation);
+		PyArrayObject* npy_rotation = (PyArrayObject*) PyArray_Transpose(npy_rotation_trans, NULL);
+		PyArray_ENABLEFLAGS(npy_translation, NPY_ARRAY_OWNDATA);
+		PyArray_ENABLEFLAGS(npy_rotation, NPY_ARRAY_OWNDATA);
+		Py_DECREF(npy_rotation_trans);
+
+		return Py_BuildValue("NN", npy_rotation, npy_translation);
+
+	} else {
+		PyErr_SetString(PyExc_ValueError, "Cannot parse the input.");
+		return NULL;
+	}
 }
 
 
