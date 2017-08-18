@@ -3,6 +3,7 @@
 
 #include <Python.h>
 #include <librealsense/rs.hpp>
+#include <librealsense/rsutil.h>
 #include <numpy/arrayobject.h>
 
 #include "exception.h"
@@ -59,6 +60,8 @@ static PyObject* Device_set_options(DeviceObject *self, PyObject* args);
 
 static PyObject* Device_get_extrinsics(DeviceObject *self, PyObject* args);
 
+static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args);
+
 
 static PyMethodDef Device_methods[] = {
 		{"_stop", (PyCFunction)Device_stop, METH_NOARGS,
@@ -83,6 +86,8 @@ static PyMethodDef Device_methods[] = {
 				"Set device options."},
 		{"_get_extrinsics", (PyCFunction)Device_get_extrinsics, METH_VARARGS,
 				"Get the extrinsics (rotation, translation) from one stream to another."},
+        {"_get_aligned", (PyCFunction)Device_get_aligned, METH_NOARGS,
+                "Get the aligned color, depth and ir channel."},
 		{NULL}
 };
 
@@ -392,6 +397,94 @@ static PyObject* Device_get_extrinsics(DeviceObject *self, PyObject* args)
 		PyErr_SetString(PyExc_ValueError, "Cannot parse the input.");
 		return NULL;
 	}
+}
+
+
+static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
+{
+
+    int cheight = self->dev->get_stream_height(rs::stream::color);
+    int cwidth = self->dev->get_stream_width(rs::stream::color);
+
+    int dheight = self->dev->get_stream_height(rs::stream::depth);
+    int dwidth = self->dev->get_stream_width(rs::stream::depth);
+
+    self->dev->wait_for_frames();
+
+    auto cframe = (uint8_t *)(self->dev->get_frame_data(rs::stream::color));
+    auto dframe = (uint16_t *)(self->dev->get_frame_data(rs::stream::depth));
+    auto iframe = (uint8_t *)(self->dev->get_frame_data(rs::stream::infrared));
+
+    auto * dframe_aligned = new uint16_t[cheight * cwidth]();
+    auto * iframe_aligned = new uint8_t[cheight * cwidth]();
+
+    auto color_intrin = self->dev->get_stream_intrinsics(rs::stream::color);
+    auto depth_intrin = self->dev->get_stream_intrinsics(rs::stream::depth);
+    auto depth_to_color = self->dev->get_extrinsics(rs::stream::depth, rs::stream::color);
+    float scale = self->dev->get_depth_scale();
+
+
+    int dx, dy;
+
+    for(dy=0; dy<dheight; ++dy){
+        for(dx=0; dx<dwidth; ++dx){
+
+            uint16_t depth_value = dframe[dy * dwidth + dx];
+            float depth_in_meters = depth_value * scale;
+
+            /* Skip over pixels with a depth value of zero, which is used to indicate no data */
+            if(depth_value == 0) continue;
+
+            rs::float2 depth_pix = {(float)dx, (float)dy};
+
+            auto depth_point = depth_intrin.deproject(depth_pix, depth_in_meters);
+            auto color_point = depth_to_color.transform(depth_point);
+            auto color_pix = color_intrin.project(color_point);
+
+            auto cx = (int)roundf(color_pix.x), cy = (int)roundf(color_pix.y);
+
+//            printf("%d %d\n", cx, cy);
+
+            if(cx < 0 || cy < 0 || cx >= cwidth || cy >= cheight)
+                continue;
+
+            dframe_aligned[cy * cwidth + cx] = dframe[dy * dwidth + dx];
+            iframe_aligned[cy * cwidth + cx] = iframe[dy * dwidth + dx];
+
+        }
+    }
+
+    npy_intp cframe_dim[3] = {cheight, cwidth, 3};
+    npy_intp frame_dim[2] = {cheight, cwidth};
+
+    auto* npy_cframe = (PyArrayObject*) PyArray_SimpleNewFromData(
+            3, cframe_dim, NPY_UINT8, cframe
+    );
+    if (npy_cframe == NULL) {
+        PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
+        return NULL;
+    }
+
+    auto* npy_dframe = (PyArrayObject*) PyArray_SimpleNewFromData(
+            2, frame_dim, NPY_UINT16, dframe_aligned
+    );
+    if (npy_dframe == NULL) {
+        PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
+        return NULL;
+    }
+
+    auto* npy_iframe = (PyArrayObject*) PyArray_SimpleNewFromData(
+            2, frame_dim, NPY_UINT8, iframe_aligned
+    );
+    if (npy_iframe == NULL) {
+        PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
+        return NULL;
+    }
+
+    PyArray_ENABLEFLAGS(npy_dframe, NPY_ARRAY_OWNDATA);
+    PyArray_ENABLEFLAGS(npy_iframe, NPY_ARRAY_OWNDATA);
+
+    return Py_BuildValue("NNN", npy_cframe, npy_dframe, npy_iframe);
 }
 
 

@@ -192,3 +192,6 @@ class Device(object):
 
     def get_extrinsics(self, from_stream, to_stream):
         return self._dev._get_extrinsics(from_stream, to_stream)
+
+    def get_aligned(self):
+        return self._dev._get_aligned()
