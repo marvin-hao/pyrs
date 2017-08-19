@@ -459,15 +459,10 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
 				for(int x=tl_x; x<=br_x; ++x){
 					if (dframe_aligned[y * cwidth + x] == 0)
 						dframe_aligned[y * cwidth + x] = dframe[dy * dwidth + dx];
-					else
-						dframe_aligned[y * cwidth + x] = std::min(dframe_aligned[y * cwidth + x],dframe[dy * dwidth + dx]);
 
 					if (iframe_aligned[y * cwidth + x] == 0)
 						iframe_aligned[y * cwidth + x] = iframe[dy * dwidth + dx];
-					else
-						iframe_aligned[y * cwidth + x] = std::min(iframe_aligned[y * cwidth + x],iframe[dy * dwidth + dx]);
 				}
-
         }
     }
 
