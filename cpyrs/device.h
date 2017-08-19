@@ -435,21 +435,38 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
             /* Skip over pixels with a depth value of zero, which is used to indicate no data */
             if(depth_value == 0) continue;
 
-            rs::float2 depth_pix = {(float)dx, (float)dy};
+			// Map the top-left corner of the depth pixel onto the other image
+			rs::float2 depth_pix_tl = {dx-0.5f, dy-0.5f};
+			auto depth_point_tl = depth_intrin.deproject(depth_pix_tl, depth_in_meters);
+			auto color_point_tl = depth_to_color.transform(depth_point_tl);
+			auto color_pix_tl = color_intrin.project(color_point_tl);
+			auto tl_x = static_cast<int>(color_pix_tl.x+0.5f);
+			auto tl_y = static_cast<int>(color_pix_tl.y+0.5f);
 
-            auto depth_point = depth_intrin.deproject(depth_pix, depth_in_meters);
-            auto color_point = depth_to_color.transform(depth_point);
-            auto color_pix = color_intrin.project(color_point);
+			// Map the bottom-right corner of the depth pixel onto the other image
+			rs::float2 depth_pix_br = {dx+0.5f, dy+0.5f};
+			auto depth_point_br = depth_intrin.deproject(depth_pix_br, depth_in_meters);
+			auto color_point_br = depth_to_color.transform(depth_point_br);
+			auto color_pix_br = color_intrin.project(color_point_br);
+			auto br_x = static_cast<int>(color_pix_br.x+0.5f);
+			auto br_y = static_cast<int>(color_pix_br.y+0.5f);
 
-            auto cx = (int)roundf(color_pix.x), cy = (int)roundf(color_pix.y);
 
-//            printf("%d %d\n", cx, cy);
+			if(tl_x < 0 || tl_y < 0 || br_x >= cwidth || br_y >= cheight) continue;
 
-            if(cx < 0 || cy < 0 || cx >= cwidth || cy >= cheight)
-                continue;
+			// Transfer between the depth pixels and the pixels inside the rectangle on the other image
+			for(int y=tl_y; y<=br_y; ++y)
+				for(int x=tl_x; x<=br_x; ++x){
+					if (dframe_aligned[y * cwidth + x] == 0)
+						dframe_aligned[y * cwidth + x] = dframe[dy * dwidth + dx];
+					else
+						dframe_aligned[y * cwidth + x] = std::min(dframe_aligned[y * cwidth + x],dframe[dy * dwidth + dx]);
 
-            dframe_aligned[cy * cwidth + cx] = dframe[dy * dwidth + dx];
-            iframe_aligned[cy * cwidth + cx] = iframe[dy * dwidth + dx];
+					if (iframe_aligned[y * cwidth + x] == 0)
+						iframe_aligned[y * cwidth + x] = iframe[dy * dwidth + dx];
+					else
+						iframe_aligned[y * cwidth + x] = std::min(iframe_aligned[y * cwidth + x],iframe[dy * dwidth + dx]);
+				}
 
         }
     }
