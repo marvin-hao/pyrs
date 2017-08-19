@@ -415,6 +415,7 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
     auto dframe = (uint16_t *)(self->dev->get_frame_data(rs::stream::depth));
     auto iframe = (uint8_t *)(self->dev->get_frame_data(rs::stream::infrared));
 
+	auto * cframe_aligned = new uint8_t[cheight * cwidth * 3]();
     auto * dframe_aligned = new uint16_t[cheight * cwidth]();
     auto * iframe_aligned = new uint8_t[cheight * cwidth]();
 
@@ -433,7 +434,7 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
             float depth_in_meters = depth_value * scale;
 
             /* Skip over pixels with a depth value of zero, which is used to indicate no data */
-            if(depth_value == 0) continue;
+            if(depth_in_meters > 0.5 || depth_in_meters < 0.2) continue;
 
 			// Map the top-left corner of the depth pixel onto the other image
 			rs::float2 depth_pix_tl = {dx-0.5f, dy-0.5f};
@@ -457,6 +458,12 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
 			// Transfer between the depth pixels and the pixels inside the rectangle on the other image
 			for(int y=tl_y; y<=br_y; ++y)
 				for(int x=tl_x; x<=br_x; ++x){
+					cframe_aligned[y * cwidth * 3 + x * 3] = cframe[y * cwidth * 3 + x * 3];
+					cframe_aligned[y * cwidth * 3 + x * 3 + 1] = cframe[y * cwidth * 3 + x * 3 + 1];
+					cframe_aligned[y * cwidth * 3 + x * 3 + 2] = cframe[y * cwidth * 3 + x * 3 + 2];
+//					cframe_aligned[1 * cwidth * cheight + y * cwidth + x] = cframe[1 * cwidth * cheight + y * cwidth + x];
+//					cframe_aligned[2 * cwidth * cheight + y * cwidth + x] = cframe[2 * cwidth * cheight + y * cwidth + x];
+
 					if (dframe_aligned[y * cwidth + x] == 0)
 						dframe_aligned[y * cwidth + x] = dframe[dy * dwidth + dx];
 
@@ -470,7 +477,7 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
     npy_intp frame_dim[2] = {cheight, cwidth};
 
     auto* npy_cframe = (PyArrayObject*) PyArray_SimpleNewFromData(
-            3, cframe_dim, NPY_UINT8, cframe
+            3, cframe_dim, NPY_UINT8, cframe_aligned
     );
     if (npy_cframe == NULL) {
         PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
@@ -493,6 +500,7 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
         return NULL;
     }
 
+	PyArray_ENABLEFLAGS(npy_cframe, NPY_ARRAY_OWNDATA);
     PyArray_ENABLEFLAGS(npy_dframe, NPY_ARRAY_OWNDATA);
     PyArray_ENABLEFLAGS(npy_iframe, NPY_ARRAY_OWNDATA);
 
