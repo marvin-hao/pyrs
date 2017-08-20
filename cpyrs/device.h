@@ -86,7 +86,7 @@ static PyMethodDef Device_methods[] = {
 				"Set device options."},
 		{"_get_extrinsics", (PyCFunction)Device_get_extrinsics, METH_VARARGS,
 				"Get the extrinsics (rotation, translation) from one stream to another."},
-        {"_get_aligned", (PyCFunction)Device_get_aligned, METH_NOARGS,
+        {"_get_aligned", (PyCFunction)Device_get_aligned, METH_VARARGS,
                 "Get the aligned color, depth and ir channel."},
 		{NULL}
 };
@@ -402,6 +402,13 @@ static PyObject* Device_get_extrinsics(DeviceObject *self, PyObject* args)
 
 static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
 {
+	bool with_original;
+	float min_depth, max_depth;
+
+	if (!PyArg_ParseTuple(args, "ffp", &min_depth, &max_depth, &with_original)){
+		PyErr_SetString(PyExc_ValueError, "Cannot parse the input.");
+		return NULL;
+	}
 
     int cheight = self->dev->get_stream_height(rs::stream::color);
     int cwidth = self->dev->get_stream_width(rs::stream::color);
@@ -433,8 +440,10 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
             uint16_t depth_value = dframe[dy * dwidth + dx];
             float depth_in_meters = depth_value * scale;
 
-            /* Skip over pixels with a depth value of zero, which is used to indicate no data */
-            if(depth_in_meters > 0.5 || depth_in_meters < 0.2) continue;
+			if (depth_in_meters <= std::fmax(0, min_depth))
+				continue;
+			else if (max_depth > 0 && depth_in_meters >= max_depth)
+				continue;
 
 			// Map the top-left corner of the depth pixel onto the other image
 			rs::float2 depth_pix_tl = {dx-0.5f, dy-0.5f};
@@ -461,8 +470,6 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
 					cframe_aligned[y * cwidth * 3 + x * 3] = cframe[y * cwidth * 3 + x * 3];
 					cframe_aligned[y * cwidth * 3 + x * 3 + 1] = cframe[y * cwidth * 3 + x * 3 + 1];
 					cframe_aligned[y * cwidth * 3 + x * 3 + 2] = cframe[y * cwidth * 3 + x * 3 + 2];
-//					cframe_aligned[1 * cwidth * cheight + y * cwidth + x] = cframe[1 * cwidth * cheight + y * cwidth + x];
-//					cframe_aligned[2 * cwidth * cheight + y * cwidth + x] = cframe[2 * cwidth * cheight + y * cwidth + x];
 
 					if (dframe_aligned[y * cwidth + x] == 0)
 						dframe_aligned[y * cwidth + x] = dframe[dy * dwidth + dx];
@@ -504,7 +511,18 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
     PyArray_ENABLEFLAGS(npy_dframe, NPY_ARRAY_OWNDATA);
     PyArray_ENABLEFLAGS(npy_iframe, NPY_ARRAY_OWNDATA);
 
-    return Py_BuildValue("NNN", npy_cframe, npy_dframe, npy_iframe);
+	if (with_original){
+		auto* npy_cframe_origin = (PyArrayObject*) PyArray_SimpleNewFromData(
+				3, cframe_dim, NPY_UINT8, cframe
+		);
+		if (npy_cframe_origin == NULL) {
+			PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
+			return NULL;
+		}
+
+		return Py_BuildValue("NNNN", npy_cframe, npy_dframe, npy_iframe, npy_cframe_origin);
+	} else
+    	return Py_BuildValue("NNN", npy_cframe, npy_dframe, npy_iframe);
 }
 
 

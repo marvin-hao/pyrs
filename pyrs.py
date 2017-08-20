@@ -193,5 +193,9 @@ class Device(object):
     def get_extrinsics(self, from_stream, to_stream):
         return self._dev._get_extrinsics(from_stream, to_stream)
 
-    def get_aligned(self):
-        return self._dev._get_aligned()
+    def get_aligned(self, min_depth=None, max_depth=None, with_original=False):
+        if min_depth is None:
+            min_depth = -1
+        if max_depth is None:
+            max_depth = -1
+        return self._dev._get_aligned(min_depth, max_depth, with_original)
