@@ -193,9 +193,26 @@ class Device(object):
     def get_extrinsics(self, from_stream, to_stream):
         return self._dev._get_extrinsics(from_stream, to_stream)
 
-    def get_aligned(self, min_depth=None, max_depth=None, with_original=False):
-        if min_depth is None:
-            min_depth = -1
-        if max_depth is None:
-            max_depth = -1
-        return self._dev._get_aligned(min_depth, max_depth, with_original)
+    def get_masked(self, range_list=None, with_original=False):
+        range_list_copy = []
+
+        if isinstance(range_list, list):
+            for depth_range in range_list:
+                if (isinstance(depth_range, list) or isinstance(depth_range, tuple)) and len(depth_range) == 2:
+                    depth_range_copy = []
+                    if depth_range[0] is None:
+                        depth_range_copy.append(-1)
+                    else:
+                        depth_range_copy.append(depth_range[0])
+
+                    if depth_range[1] is None:
+                        depth_range_copy.append(-1)
+                    else:
+                        depth_range_copy.append(depth_range[1])
+                    range_list_copy.append(depth_range_copy)
+            if len(range_list_copy) == 0:
+                range_list_copy.append([-1, -1])
+        else:
+            range_list_copy.append([-1, -1])
+
+        return self._dev._get_masked(range_list_copy, with_original)

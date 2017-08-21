@@ -60,7 +60,7 @@ static PyObject* Device_set_options(DeviceObject *self, PyObject* args);
 
 static PyObject* Device_get_extrinsics(DeviceObject *self, PyObject* args);
 
-static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args);
+static PyObject* Device_get_masked(DeviceObject *self, PyObject *args);
 
 
 static PyMethodDef Device_methods[] = {
@@ -86,8 +86,8 @@ static PyMethodDef Device_methods[] = {
 				"Set device options."},
 		{"_get_extrinsics", (PyCFunction)Device_get_extrinsics, METH_VARARGS,
 				"Get the extrinsics (rotation, translation) from one stream to another."},
-        {"_get_aligned", (PyCFunction)Device_get_aligned, METH_VARARGS,
-                "Get the aligned color, depth and ir channel."},
+        {"_get_masked", (PyCFunction)Device_get_masked, METH_VARARGS,
+                "Get sets of masked (also aligned) color, depth and ir channel."},
 		{NULL}
 };
 
@@ -400,15 +400,19 @@ static PyObject* Device_get_extrinsics(DeviceObject *self, PyObject* args)
 }
 
 
-static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
+static PyObject* Device_get_masked(DeviceObject *self, PyObject *args)
 {
 	bool with_original;
-	double min_depth, max_depth;
 
-	if (!PyArg_ParseTuple(args, "ddp", &min_depth, &max_depth, &with_original)){
+    PyObject* range_list;
+
+	if (!PyArg_ParseTuple(args, "O!p", &PyList_Type, &range_list, &with_original)){
 		PyErr_SetString(PyExc_ValueError, "Cannot parse the input.");
 		return NULL;
 	}
+
+    auto n_layer = (ulong)PyList_Size(range_list);
+    auto* result = PyList_New(n_layer);
 
     int cheight = self->dev->get_stream_height(rs::stream::color);
     int cwidth = self->dev->get_stream_width(rs::stream::color);
@@ -422,94 +426,112 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
     auto dframe = (uint16_t *)(self->dev->get_frame_data(rs::stream::depth));
     auto iframe = (uint8_t *)(self->dev->get_frame_data(rs::stream::infrared));
 
-	auto * cframe_aligned = new uint8_t[cheight * cwidth * 3]();
-    auto * dframe_aligned = new uint16_t[cheight * cwidth]();
-    auto * iframe_aligned = new uint8_t[cheight * cwidth]();
-
     auto color_intrin = self->dev->get_stream_intrinsics(rs::stream::color);
     auto depth_intrin = self->dev->get_stream_intrinsics(rs::stream::depth);
     auto depth_to_color = self->dev->get_extrinsics(rs::stream::depth, rs::stream::color);
     float scale = self->dev->get_depth_scale();
 
+    auto cframe_aligned_list = std::vector<uint8_t*>(n_layer);
+    auto dframe_aligned_list = std::vector<uint16_t*>(n_layer);
+    auto iframe_aligned_list = std::vector<uint8_t*>(n_layer);
+    auto min_depth_list = std::vector<double>(n_layer);
+    auto max_depth_list = std::vector<double>(n_layer);
+
+    for(ulong n = 0; n < n_layer; ++n){
+        cframe_aligned_list[n] = new uint8_t[cheight * cwidth * 3]();
+        dframe_aligned_list[n] = new uint16_t[cheight * cwidth]();
+        iframe_aligned_list[n] = new uint8_t[cheight * cwidth]();
+        min_depth_list[n] = PyFloat_AsDouble(PyList_GetItem(PyList_GetItem(range_list, n), 0));
+        max_depth_list[n] = PyFloat_AsDouble(PyList_GetItem(PyList_GetItem(range_list, n), 1));
+    }
 
     int dx, dy;
 
     for(dy=0; dy<dheight; ++dy){
         for(dx=0; dx<dwidth; ++dx){
-
             uint16_t depth_value = dframe[dy * dwidth + dx];
             float depth_in_meters = depth_value * scale;
 
-			if (depth_in_meters <= std::fmax(0, min_depth))
-				continue;
-			else if (max_depth > 0 && depth_in_meters >= max_depth)
-				continue;
+            for (ulong n = 0; n < n_layer; ++n){
+                if (depth_in_meters <= std::fmax(0, min_depth_list[n]))
+                    continue;
+                else if (max_depth_list[n] > 0 && depth_in_meters >= max_depth_list[n])
+                    continue;
 
-			// Map the top-left corner of the depth pixel onto the other image
-			rs::float2 depth_pix_tl = {dx-0.5f, dy-0.5f};
-			auto depth_point_tl = depth_intrin.deproject(depth_pix_tl, depth_in_meters);
-			auto color_point_tl = depth_to_color.transform(depth_point_tl);
-			auto color_pix_tl = color_intrin.project(color_point_tl);
-			auto tl_x = static_cast<int>(color_pix_tl.x+0.5f);
-			auto tl_y = static_cast<int>(color_pix_tl.y+0.5f);
+                // Map the top-left corner of the depth pixel onto the other image
+                rs::float2 depth_pix_tl = {dx-0.5f, dy-0.5f};
+                auto depth_point_tl = depth_intrin.deproject(depth_pix_tl, depth_in_meters);
+                auto color_point_tl = depth_to_color.transform(depth_point_tl);
+                auto color_pix_tl = color_intrin.project(color_point_tl);
+                auto tl_x = static_cast<int>(color_pix_tl.x+0.5f);
+                auto tl_y = static_cast<int>(color_pix_tl.y+0.5f);
 
-			// Map the bottom-right corner of the depth pixel onto the other image
-			rs::float2 depth_pix_br = {dx+0.5f, dy+0.5f};
-			auto depth_point_br = depth_intrin.deproject(depth_pix_br, depth_in_meters);
-			auto color_point_br = depth_to_color.transform(depth_point_br);
-			auto color_pix_br = color_intrin.project(color_point_br);
-			auto br_x = static_cast<int>(color_pix_br.x+0.5f);
-			auto br_y = static_cast<int>(color_pix_br.y+0.5f);
+                // Map the bottom-right corner of the depth pixel onto the other image
+                rs::float2 depth_pix_br = {dx+0.5f, dy+0.5f};
+                auto depth_point_br = depth_intrin.deproject(depth_pix_br, depth_in_meters);
+                auto color_point_br = depth_to_color.transform(depth_point_br);
+                auto color_pix_br = color_intrin.project(color_point_br);
+                auto br_x = static_cast<int>(color_pix_br.x+0.5f);
+                auto br_y = static_cast<int>(color_pix_br.y+0.5f);
 
 
-			if(tl_x < 0 || tl_y < 0 || br_x >= cwidth || br_y >= cheight) continue;
+                if(tl_x < 0 || tl_y < 0 || br_x >= cwidth || br_y >= cheight) continue;
 
-			// Transfer between the depth pixels and the pixels inside the rectangle on the other image
-			for(int y=tl_y; y<=br_y; ++y)
-				for(int x=tl_x; x<=br_x; ++x){
-					cframe_aligned[y * cwidth * 3 + x * 3] = cframe[y * cwidth * 3 + x * 3];
-					cframe_aligned[y * cwidth * 3 + x * 3 + 1] = cframe[y * cwidth * 3 + x * 3 + 1];
-					cframe_aligned[y * cwidth * 3 + x * 3 + 2] = cframe[y * cwidth * 3 + x * 3 + 2];
+                // Transfer between the depth pixels and the pixels inside the rectangle on the other image
+                for(int y=tl_y; y<=br_y; ++y)
+                    for(int x=tl_x; x<=br_x; ++x){
+                        cframe_aligned_list[n][y * cwidth * 3 + x * 3] = cframe[y * cwidth * 3 + x * 3];
+                        cframe_aligned_list[n][y * cwidth * 3 + x * 3 + 1] = cframe[y * cwidth * 3 + x * 3 + 1];
+                        cframe_aligned_list[n][y * cwidth * 3 + x * 3 + 2] = cframe[y * cwidth * 3 + x * 3 + 2];
 
-					if (dframe_aligned[y * cwidth + x] == 0)
-						dframe_aligned[y * cwidth + x] = dframe[dy * dwidth + dx];
+                        if (dframe_aligned_list[n][y * cwidth + x] == 0)
+                            dframe_aligned_list[n][y * cwidth + x] = dframe[dy * dwidth + dx];
 
-					if (iframe_aligned[y * cwidth + x] == 0)
-						iframe_aligned[y * cwidth + x] = iframe[dy * dwidth + dx];
-				}
+                        if (iframe_aligned_list[n][y * cwidth + x] == 0)
+                            iframe_aligned_list[n][y * cwidth + x] = iframe[dy * dwidth + dx];
+                    }
+            }
         }
     }
 
     npy_intp cframe_dim[3] = {cheight, cwidth, 3};
     npy_intp frame_dim[2] = {cheight, cwidth};
 
-    auto* npy_cframe = (PyArrayObject*) PyArray_SimpleNewFromData(
-            3, cframe_dim, NPY_UINT8, cframe_aligned
-    );
-    if (npy_cframe == NULL) {
-        PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
-        return NULL;
-    }
+    for (ulong n = 0; n < n_layer; ++n){
+        auto* npy_cframe = (PyArrayObject*) PyArray_SimpleNewFromData(
+                3, cframe_dim, NPY_UINT8, cframe_aligned_list[n]
+        );
+        if (npy_cframe == NULL) {
+            PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
+            return NULL;
+        }
 
-    auto* npy_dframe = (PyArrayObject*) PyArray_SimpleNewFromData(
-            2, frame_dim, NPY_UINT16, dframe_aligned
-    );
-    if (npy_dframe == NULL) {
-        PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
-        return NULL;
-    }
+        auto* npy_dframe = (PyArrayObject*) PyArray_SimpleNewFromData(
+                2, frame_dim, NPY_UINT16, dframe_aligned_list[n]
+        );
+        if (npy_dframe == NULL) {
+            PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
+            return NULL;
+        }
 
-    auto* npy_iframe = (PyArrayObject*) PyArray_SimpleNewFromData(
-            2, frame_dim, NPY_UINT8, iframe_aligned
-    );
-    if (npy_iframe == NULL) {
-        PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
-        return NULL;
-    }
+        auto* npy_iframe = (PyArrayObject*) PyArray_SimpleNewFromData(
+                2, frame_dim, NPY_UINT8, iframe_aligned_list[n]
+        );
+        if (npy_iframe == NULL) {
+            PyErr_SetString(PyExc_ValueError, "Cannot create numpy array from the frame.");
+            return NULL;
+        }
 
-	PyArray_ENABLEFLAGS(npy_cframe, NPY_ARRAY_OWNDATA);
-    PyArray_ENABLEFLAGS(npy_dframe, NPY_ARRAY_OWNDATA);
-    PyArray_ENABLEFLAGS(npy_iframe, NPY_ARRAY_OWNDATA);
+        PyArray_ENABLEFLAGS(npy_cframe, NPY_ARRAY_OWNDATA);
+        PyArray_ENABLEFLAGS(npy_dframe, NPY_ARRAY_OWNDATA);
+        PyArray_ENABLEFLAGS(npy_iframe, NPY_ARRAY_OWNDATA);
+
+        PyObject* layer = PyList_New(3);
+        PyList_SetItem(layer, 0, (PyObject*) npy_cframe);
+        PyList_SetItem(layer, 1, (PyObject*) npy_dframe);
+        PyList_SetItem(layer, 2, (PyObject*) npy_iframe);
+        PyList_SetItem(result, n, layer);
+    }
 
 	if (with_original){
 		auto* npy_cframe_origin = (PyArrayObject*) PyArray_SimpleNewFromData(
@@ -520,11 +542,9 @@ static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
 			return NULL;
 		}
 
-		return Py_BuildValue("NNNN", npy_cframe, npy_dframe, npy_iframe, npy_cframe_origin);
+		return Py_BuildValue("NN", result, npy_cframe_origin);
 	} else
-    	return Py_BuildValue("NNN", npy_cframe, npy_dframe, npy_iframe);
+    	return Py_BuildValue("N", result);
 }
-
-
 
 #endif //PYRS_DEVICE_H
