@@ -403,9 +403,9 @@ static PyObject* Device_get_extrinsics(DeviceObject *self, PyObject* args)
 static PyObject* Device_get_aligned(DeviceObject *self, PyObject* args)
 {
 	bool with_original;
-	float min_depth, max_depth;
+	double min_depth, max_depth;
 
-	if (!PyArg_ParseTuple(args, "ffp", &min_depth, &max_depth, &with_original)){
+	if (!PyArg_ParseTuple(args, "ddp", &min_depth, &max_depth, &with_original)){
 		PyErr_SetString(PyExc_ValueError, "Cannot parse the input.");
 		return NULL;
 	}
